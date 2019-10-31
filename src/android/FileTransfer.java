@@ -755,28 +755,43 @@ public class FileTransfer extends CordovaPlugin {
                         }
                         inputStream = new SimpleTrackingInputStream(readResult.inputStream);
                     } else {
-                        // connect to server
-                        // Open a HTTP connection to the URL based on protocol
-                        connection = resourceApi.createHttpConnection(sourceUri);
-                        connection.setRequestMethod("GET");
+                        Uri currentSourceUri = sourceUri;
+                        while (true) {
+                            // connect to server
+                            // Open a HTTP connection to the URL based on protocol
+                            connection = resourceApi.createHttpConnection(currentSourceUri);
+                            connection.setRequestMethod("GET");
 
-                        // TODO: Make OkHttp use this CookieManager by default.
-                        String cookie = getCookies(sourceUri.toString());
+                            // TODO: Make OkHttp use this CookieManager by default.
+                            String cookie = getCookies(currentSourceUri.toString());
 
-                        if(cookie != null)
-                        {
-                            connection.setRequestProperty("cookie", cookie);
+                            if(cookie != null)
+                            {
+                                connection.setRequestProperty("cookie", cookie);
+                            }
+
+                            // This must be explicitly set for gzip progress tracking to work.
+                            connection.setRequestProperty("Accept-Encoding", "gzip");
+
+                            // Handle the other headers
+                            if (headers != null) {
+                                addHeadersToRequest(connection, headers);
+                            }
+
+                            connection.connect();
+
+                            if (connection.getResponseCode() == HttpURLConnection.HTTP_MOVED_PERM ||
+                                connection.getResponseCode() == HttpURLConnection.HTTP_MOVED_TEMP) {
+                                String location = connection.getHeaderField("Location");
+                                URL base  = new URL(currentSourceUri.toString());
+                                URL next  = new URL(base, location);  // Deal with relative URLs
+                                currentSourceUri = Uri.parse(next.toString());
+                                continue;
+                            }
+
+                            break;
                         }
 
-                        // This must be explicitly set for gzip progress tracking to work.
-                        connection.setRequestProperty("Accept-Encoding", "gzip");
-
-                        // Handle the other headers
-                        if (headers != null) {
-                            addHeadersToRequest(connection, headers);
-                        }
-
-                        connection.connect();
                         if (connection.getResponseCode() == HttpURLConnection.HTTP_NOT_MODIFIED) {
                             cached = true;
                             connection.disconnect();
